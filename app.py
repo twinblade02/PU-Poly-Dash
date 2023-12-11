@@ -11,6 +11,8 @@ from dash.dependencies import Input, Output
 
 # ---------------------------- # ----------------------------------# ----------------------------- #
 app = dash.Dash(__name__)
+server = app.server
+
 fall_data = pd.read_csv('FA23.csv')
 spring_data = pd.read_csv('SP23.csv')
 clean_fall = pd.read_csv('clean_fall.csv')
