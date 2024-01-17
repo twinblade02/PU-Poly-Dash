@@ -11,6 +11,8 @@ from dash.dependencies import Input, Output
 
 # ---------------------------- # ----------------------------------# ----------------------------- #
 app = dash.Dash(__name__)
+server = app.server
+
 fall_data = pd.read_excel('FA23-standardized.xlsx')
 fall_data = fall_data.query('Department != "Naval Science" and Department != "Military Science" and Department != "Aerospace Studies"')
 spring_data = pd.read_excel('SP23 Standardized.xlsx')
