@@ -82,7 +82,7 @@ def update_chart(selected_file, value):
     elif selected_file == 'fall':
         df = fall_data
         df2 = clean_fall
-
+    
     filtered_df = df[df['Instructor'] == value]
     filtered_df['Enrollment %'] = filtered_df['Sum_Enrollment'] / filtered_df['Sum_Capacity'] * 100
 
@@ -91,12 +91,15 @@ def update_chart(selected_file, value):
     instructorTitle_courses = df.groupby(['Instructor_Title'], as_index=False)['Course_count'].sum()
     instructorTitle_Deptcourses = df.groupby(['Instructor_Title', 'Department'], as_index=False)['Course_count'].sum()
 
-    Q1 = df['Course_count'].quantile(0.25)
-    Q3 = df['Course_count'].quantile(0.75)
-    IQR = Q3 - Q1
-    lower_threshold = Q1 - 1.5 * IQR
-    upper_threshold = Q3 + 1.5 * IQR
-    outliers = df[(df['Course_count'] < lower_threshold) | (df['Course_count'] > upper_threshold)]
+    outlier_df = pd.DataFrame()
+    for dep, data in df.groupby('Department'):
+        Q1 = data['Course_count'].quantile(0.25)
+        Q3 = data['Course_count'].quantile(0.75)
+        IQR = Q3 - Q1
+        lower_threshold = Q1 - 1.5 * IQR
+        upper_threshold = Q3 + 1.5 * IQR
+        outliers = data[(data['Course_count'] < lower_threshold) | (data['Course_count'] > upper_threshold)]
+        outlier_df = pd.concat([outlier_df, outliers])
 
     department = df.groupby('Department', as_index=False)['Sum_Enrollment', 'Sum_Capacity'].sum()
     #department['Enrollment %'] = department['Sum_Enrollment'] / department['Sum_Capacity'] * 100
@@ -129,7 +132,7 @@ def update_chart(selected_file, value):
     mean_courses_chart = px.bar(mean_courseDF, x='Department', y='Course_count', color='Instructor_Title',
                                 title=f'Mean number of courses by instructor title and department ({selected_file.capitalize()})',
                                 labels={'Course_count': 'Mean Courses'}, height=400)
-
+    
     instructor_course_assignment = {
         'data': [
             {'x': instructorTitle_courses['Instructor_Title'], 'y': instructorTitle_courses['Course_count'], 'type': 'bar', 'name': 'Titles'}
@@ -140,7 +143,7 @@ def update_chart(selected_file, value):
     }
 
     instructor_department_courseSum = px.bar(instructorTitle_Deptcourses, x='Instructor_Title', y='Course_count', color='Department',
-                                             title=f'Sum of instructor titles by department', barmode='stack', labels={'Course_count': 'Sum of Courses'})
+                                             title=f'Sum of instructor titles by department', barmode='stack', labels={'Course_count': 'Sum of Courses'}) 
 
     department_summary = {
         'data': [
@@ -154,8 +157,8 @@ def update_chart(selected_file, value):
 
     enrollment_day_summary = px.bar(day_avail, x='Days', y='Enrl*', color='Department',
                                     title=f'Enrollment by day and department', barmode='stack')
-
-    outlier_table = outliers.to_dict('records')
+    
+    outlier_table = outlier_df.to_dict('records')
 
     return enrollment_capacity_figure, mean_courses_chart, instructor_course_assignment, instructor_department_courseSum, department_summary, enrollment_day_summary, outlier_table
 
