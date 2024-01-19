@@ -1,5 +1,3 @@
-import pandas as pd
-import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
 import dash
@@ -7,7 +5,7 @@ from dash import dcc
 from dash import html
 from dash import dash_table
 from dash.dependencies import Input, Output
-
+import dash_bootstrap_components as dbc
 
 # ---------------------------- # ----------------------------------# ----------------------------- #
 app = dash.Dash(__name__)
@@ -22,7 +20,7 @@ clean_spring = pd.read_csv('clean_sping.csv')
 # ---------------------------- # --------------------------------- # ---------------------------- #
 
 app.layout = html.Div([
-    html.H1('Dashboard', style={'tex_align': 'center'}),
+    html.H1('Faculty Loading', style={'tex_align': 'center'}),
     dcc.Dropdown(id='file-dropdown', options=[{'label': 'Spring', 'value':'spring'},
                                               {'label': 'Fall', 'value': 'fall'}],
                                               value='spring', multi=False),
@@ -31,6 +29,11 @@ app.layout = html.Div([
                  value=fall_data.Instructor.iloc[0], multi=False),
     html.Div([
         dcc.Graph(id='enrollment-capacity-chart'),
+        dbc.Card(id='course-card', 
+                 style={'width': '18rem', 'margin': '10px', 'background-color': 'lightblue', 'outline': True}, 
+                 children = [dbc.CardHeader('Courses Taught'), 
+                             dbc.CardBody([dbc.ListGroup(id='courses-list'),
+                                           ])]),
         dcc.Graph(id='mean-courses'),
         dcc.Graph(id='instructor-courses-count'),
         dcc.Graph(id='instructor-courses-sum-department'),
@@ -44,8 +47,8 @@ app.layout = html.Div([
                                  style_table={'height': '300px', 'overflowY': 'auto'},
                                  )
                 ])
-        ])
-])
+        ], style={'backgroundColor': '#f2f2f2', 'fontFamily': 'Arial, sans-serif'})
+], style={'backgroundColor': '#f2f2f2', 'fontFamily': 'Arial, sans-serif'})
 
 
 @app.callback(
@@ -64,6 +67,7 @@ def update_instructor_dropdown(value):
 
 @app.callback(
         [Output('enrollment-capacity-chart', 'figure'),
+         Output('courses-list', 'children'),
          Output('mean-courses', 'figure'),
          Output('instructor-courses-count', 'figure'),
          Output('instructor-courses-sum-department', 'figure'),
@@ -101,6 +105,8 @@ def update_chart(selected_file, value):
         outliers = data[(data['Course_count'] < lower_threshold) | (data['Course_count'] > upper_threshold)]
         outlier_df = pd.concat([outlier_df, outliers])
 
+    unique_courses = filtered_df['Courses'].explode().unique()
+
     department = df.groupby('Department', as_index=False)['Sum_Enrollment', 'Sum_Capacity'].sum()
     #department['Enrollment %'] = department['Sum_Enrollment'] / department['Sum_Capacity'] * 100
     day_avail = df2.groupby(['Department', 'Days'], as_index=False)['Enrl*'].sum()
@@ -119,6 +125,8 @@ def update_chart(selected_file, value):
             'barmode': 'stack'
         }
     }
+
+    course_list_Items = [dbc.ListGroupItem(course) for course in unique_courses]
 
     #course_count_figure = {
     #    'data': [
@@ -160,7 +168,7 @@ def update_chart(selected_file, value):
     
     outlier_table = outlier_df.to_dict('records')
 
-    return enrollment_capacity_figure, mean_courses_chart, instructor_course_assignment, instructor_department_courseSum, department_summary, enrollment_day_summary, outlier_table
+    return enrollment_capacity_figure, course_list_Items, mean_courses_chart, instructor_course_assignment, instructor_department_courseSum, department_summary, enrollment_day_summary, outlier_table
 
 if __name__ == '__main__':
     app.run(debug=True)
