@@ -1,7 +1,7 @@
 import pandas as pd
 import numpy as np
 import streamlit as st
-import plotly.express as px
+#import plotly.express as px
 import altair as alt
 
 F24 = pd.read_excel('data/source/Fall-2024-PIN-PWL.xlsx', header=0)
