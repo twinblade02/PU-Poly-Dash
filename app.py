@@ -1,177 +1,177 @@
 import pandas as pd
 import numpy as np
-
+import streamlit as st
 import plotly.express as px
-import plotly.graph_objects as go
-import dash
-from dash import dcc
-from dash import html
-from dash import dash_table
-from dash.dependencies import Input, Output
-import dash_bootstrap_components as dbc
+import altair as alt
 
-# ---------------------------- # ----------------------------------# ----------------------------- #
-app = dash.Dash(__name__)
-server = app.server
+F24 = pd.read_excel('data/source/Fall-2024-PIN-PWL.xlsx', header=0)
+S25 = pd.read_excel('data/source/Spring-2025-PIN-PWL.xlsx', header=0)
 
-fall_data = pd.read_excel('FA23-standardized.xlsx')
-fall_data = fall_data.query('Department != "Naval Science" and Department != "Military Science" and Department != "Aerospace Studies"')
-spring_data = pd.read_excel('SP23 Standardized.xlsx')
-spring_data = spring_data.query('Department != "Naval Science" and Department != "Military Science" and Department != "Aerospace Studies"')
-clean_fall = pd.read_csv('clean_fall.csv')
-clean_spring = pd.read_csv('clean_sping.csv')
-# ---------------------------- # --------------------------------- # ---------------------------- #
+@st.cache_data
+def preprocess(df):
+    df['Identifier'] = df['Subject'].astype(str) + '-' + df['COURSE'].astype(str)
+    drop_these = ['ACADEMIC_PERIOD', 'SUB_ACADEMIC_PERIOD', 'Subject', 'COURSE', 'DEPARTMENT', 'Sec-CRN', 'DAYS', 'TIME', 'BUILDING', 'ROOM', 'INSTRUCTOR_ID',
+                  'LASTNAME', 'FIRSTNAME', 'GROUPNBR', 'Date', 'WAITLIST_COUNT', 'Waitlist remaining space']
+    df.drop(drop_these, axis=1, inplace=True)
+    df.rename({'ENRL(RE,RW,RT,RC,AU)': 'Enrl'}, axis=1, inplace=True)
+    return df
 
-app.layout = html.Div([
-    html.H1('Faculty Loading', style={'tex_align': 'center'}),
-    dcc.Dropdown(id='file-dropdown', options=[{'label': 'Spring', 'value':'spring'},
-                                              {'label': 'Fall', 'value': 'fall'}],
-                                              value='spring', multi=False),
+@st.cache_data
+def download(df):
+    return df.to_csv(index=False).encode("utf-8")
 
-    dcc.Dropdown(id = 'instructor_dropdown', options=[{'label':i, 'value': i} for i in spring_data.Instructor.unique()],
-                 value=fall_data.Instructor.iloc[0], multi=False),
-    html.Div([
-        dcc.Graph(id='enrollment-capacity-chart'),
-        dbc.Card(id='course-card', 
-                 style={'width': '18rem', 'margin': '10px', 'background-color': 'lightblue', 'outline': True}, 
-                 children = [dbc.CardHeader('Courses Taught'), 
-                             dbc.CardBody([dbc.ListGroup(id='courses-list'),
-                                           ])]),
-        dcc.Graph(id='mean-courses'),
-        dcc.Graph(id='instructor-courses-count'),
-        dcc.Graph(id='instructor-courses-sum-department'),
-        #dcc.Graph(id='course-count-chart'),
-        dcc.Graph(id='department-course-count'),
-        dcc.Graph(id='enrollment-by-day'),
+F24_Standard = preprocess(F24)
+S25_Standard = preprocess(S25)
 
-        html.Div([
-            dcc.Markdown("### Outlier Table", style={'fontSize': 20}),
-            dash_table.DataTable(id='outlier-table', columns=[{'name': col, 'id': col} for col in spring_data.columns],
-                                 style_table={'height': '300px', 'overflowY': 'auto'},
-                                 )
-                ])
-        ], style={'backgroundColor': '#f2f2f2', 'fontFamily': 'Arial, sans-serif'})
-], style={'backgroundColor': '#f2f2f2', 'fontFamily': 'Arial, sans-serif'})
+F24_Standard_WL = F24_Standard.query('CAMPUS == "PWL"')
+F24_Standard_PIN = F24_Standard.query('CAMPUS == "PIN"')
+S25_Standard_WL = S25_Standard.query('CAMPUS == "PWL"')
+S25_Standard_PIN = S25_Standard.query('CAMPUS == "PIN"')
+
+st.set_page_config(page_title='Faculty Loadings', layout='wide')
+st.title("Faculty Loading Insights")
+
+st.sidebar.header("Filter Options")
+selected_source = st.sidebar.selectbox("Choose a category", ['West Lafayette', 'Indianapolis'], 
+                                       index=None, placeholder="Select a campus location")
+st.write("Selected filter", selected_source)
+selected_semester = st.sidebar.selectbox("Choose a category", ['Fall 2024', 'Spring 2025', 'All'],
+                                       index=None, placeholder='Select a semester')
+st.write("Selected filter", selected_semester)
 
 
-@app.callback(
-        Output('instructor_dropdown', 'options'),
-        [Input('file-dropdown', 'value')]
+# dataframe selection logic with f24 as default
+if selected_source == 'West Lafayette' and selected_semester == 'Fall 2024':
+    df = F24_Standard_WL
+elif selected_source == 'West Lafayette' and selected_semester == 'Spring 2025':
+    df = S25_Standard_WL
+elif selected_source == 'West Lafayette' and selected_semester == 'All':
+    df = pd.concat([F24_Standard, S25_Standard], ignore_index=True)
+    df = df.query('CAMPUS == "PWL"')
+elif selected_source == 'Indianapolis' and selected_semester == 'Fall 2024':
+    df = F24_Standard_PIN
+elif selected_source == 'Indianapolis' and selected_semester == 'Spring 2025':
+    df = S25_Standard_PIN
+elif selected_source == 'Indianapolis' and selected_semester == 'All':
+    df = pd.concat([F24_Standard, S25_Standard], ignore_index=True)
+    df = df.query('CAMPUS == "PIN"')
+else:
+    df = F24_Standard
+
+# ---
+# Charts
+# ---
+
+# Departmental Load
+st.subheader("Department Load")
+dept_agg = df.groupby('DEPARTMENT_DESC', as_index=False)['Enrl'].sum()
+dpt_chart = alt.Chart(dept_agg).mark_bar().encode(
+    x=alt.X("DEPARTMENT_DESC:N", axis=alt.Axis(labels=False), title='Department'),
+    y=alt.Y("Enrl:Q", title='Total Enrollment'),
+    color="DEPARTMENT_DESC:N"
 )
-def update_instructor_dropdown(value):
-    if value == 'spring':
-        options = [{'label': i, 'value': i} for i in spring_data['Instructor'].unique()]
-    elif value == 'fall':
-        options = [{'label': i, 'value': i} for i in fall_data['Instructor'].unique()]
+st.altair_chart(dpt_chart, use_container_width=True)
+
+# set columns
+col1, col2 = st.columns(2)
+
+# Instructor Load
+instr_agg = df.groupby(['Instructor', 'Identifier', 'CAMPUS', 'INSTR_TYPE'], as_index=False)[['Enrl', 'LIMIT']].sum()
+
+if selected_source == 'West Lafayette':
+    instr_agg = instr_agg.query('CAMPUS == "PWL"')
+else:
+    instr_agg = instr_agg.query('CAMPUS == "PIN"')
+
+st.sidebar.header("Instructor Search")
+instr = sorted(instr_agg['Instructor'].unique())
+selected_instr = st.sidebar.selectbox("Select an instructor", instr)
+
+instr_filter = instr_agg[instr_agg['Instructor'] == selected_instr]
+st.subheader(f"Instructor Course Load: {selected_instr}")
+#instr_melt = instr_filter.melt(id_vars=['Identifier'], 
+#                               value_vars=['Enrl', 'LIMIT'],
+#                               var_name='Type', value_name='Count')
+
+
+# v1 with grouped charts: Nah, this isn't too good for it
+#instructor_chart = alt.Chart(instr_melt).mark_bar().encode(
+#    x=alt.X('Identifier:N', title='Course'),
+#    y=alt.Y('Count:Q', title='Enrollment V. Limit'),
+#    color=alt.Color('Type:N', scale=alt.Scale(scheme='tableau10')),
+#    column=alt.Column('Type:N', title=None)
+#    ).properties(width=300, height=300)
+
+# v2 with bar + line maybe?
+bars = alt.Chart(instr_filter).mark_bar().encode(
+    x='Identifier:N',
+    y='Enrl:Q',
+    color=alt.value('steelblue')
+)
+
+limits = alt.Chart(instr_filter).mark_rule(color='red').encode(
+    x='Identifier:N',
+    y='LIMIT:Q'
+)
+
+instructor_chart = bars + limits
+
+with col1:
+    st.altair_chart(instructor_chart, use_container_width=True)
+
+    st.markdown(":warning: This graph includes all types of course delivery methods. Instructors may include students teaching classes in their capacity as TAs.")
+
+# Instructor Load for both Labs and Lectures
+st.markdown("#### Enrollment and Limits by Instruction Type")
+
+bars2 = alt.Chart(instr_filter).mark_bar().encode(
+    x=alt.X('INSTR_TYPE:N', title='Instruction Type'),
+    y=alt.Y('Enrl:Q', title='Enrollment for course'),
+    color=alt.value('steelblue'),
+    tooltip=['Identifier', 'Enrl', 'LIMIT']
+)
+
+limit2 = alt.Chart(instr_filter).mark_rule(color='red').encode(
+    x='INSTR_TYPE:N',
+    y='LIMIT:Q'
+)
+
+lab_lecs = bars2 + limit2
+
+with col2:
+    st.altair_chart(lab_lecs, use_container_width=True)
+    st.markdown(":warning: Total load includes all available instruction types for a course.")
+
+# Metrics
+st.markdown("#### Enrollment by Course")
+
+for i, r in instr_filter.iterrows():
+    enrl = int(r['Enrl'])
+    limit = int(r['LIMIT'])
+    delta = enrl - limit
+
+    if delta > 0:
+        delta_text = f"+{delta} over limit"
+        delta_color = 'inverse'
+    elif delta < 0:
+        delta_text = f"{delta} under limit"
+        delta_color = 'normal'
     else:
-        options = [{'label': i, 'value': i} for i in spring_data['Instructor'].unique()]
-    return options
+        delta_text = "At limit"
+        delta_color = 'off'
 
+    st.metric(label=f"{r['Identifier']} ({r['INSTR_TYPE']})", 
+              value=f"{enrl}", delta=delta_text, delta_color=delta_color)
 
-@app.callback(
-        [Output('enrollment-capacity-chart', 'figure'),
-         Output('courses-list', 'children'),
-         Output('mean-courses', 'figure'),
-         Output('instructor-courses-count', 'figure'),
-         Output('instructor-courses-sum-department', 'figure'),
-         #Output('course-count-chart', 'figure'),
-         Output('department-course-count', 'figure'),
-         Output('enrollment-by-day', 'figure'),
-         Output('outlier-table', 'data')
-         ],
-        [Input('file-dropdown', 'value'),
-         Input('instructor_dropdown', 'value')]
+# Table for instructor data
+st.subheader(f"Tabular data for {selected_instr}")
+st.dataframe(instr_filter, use_container_width=True, hide_index=True)
+data = download(instr_filter)
+
+st.download_button(
+    label="Download Instructor data",
+    data=data,
+    file_name=f'{selected_instr}-{selected_source}-{selected_semester}.csv',
+    mime="text/csv",
+    icon=":material/download:"
 )
-def update_chart(selected_file, value):
-    if selected_file == 'spring':
-        df = spring_data
-        df2 = clean_spring
-    elif selected_file == 'fall':
-        df = fall_data
-        df2 = clean_fall
-    
-    filtered_df = df[df['Instructor'] == value]
-    filtered_df['Enrollment %'] = filtered_df['Sum_Enrollment'] / filtered_df['Sum_Capacity'] * 100
-
-    mean_courseDF = df.groupby(['Department', 'Instructor_Title']).agg({'Course_count': 'mean'}).reset_index()
-
-    instructorTitle_courses = df.groupby(['Instructor_Title'], as_index=False)['Course_count'].sum()
-    instructorTitle_Deptcourses = df.groupby(['Instructor_Title', 'Department'], as_index=False)['Course_count'].sum()
-
-    outlier_df = pd.DataFrame()
-    for dep, data in df.groupby('Department'):
-        Q1 = data['Course_count'].quantile(0.25)
-        Q3 = data['Course_count'].quantile(0.75)
-        IQR = Q3 - Q1
-        lower_threshold = Q1 - 1.5 * IQR
-        upper_threshold = Q3 + 1.5 * IQR
-        outliers = data[(data['Course_count'] < lower_threshold) | (data['Course_count'] > upper_threshold)]
-        outlier_df = pd.concat([outlier_df, outliers])
-
-    unique_courses = filtered_df['Courses'].explode().unique()
-
-    department = df.groupby('Department', as_index=False)['Sum_Enrollment', 'Sum_Capacity'].sum()
-    #department['Enrollment %'] = department['Sum_Enrollment'] / department['Sum_Capacity'] * 100
-    day_avail = df2.groupby(['Department', 'Days'], as_index=False)['Enrl*'].sum()
-    #top_courses = df2.groupby(['Subject','Crs .', 'Title'], as_index=False).agg({'Enrl*': 'sum'}).nlargest(10, 'Enrl*')
-
-    fmt_cap_txt = filtered_df['Sum_Capacity'].astype(int).astype(str)
-    fmt_ccount_txt = filtered_df['Course_count'].astype(int).astype(str)
-
-    enrollment_capacity_figure = {
-        'data': [
-            {'x': filtered_df['Courses'], 'y': filtered_df['Enrollment %'], 'type': 'bar', 'name': 'Enrollment'},
-            {'x': filtered_df['Courses'], 'y': 100 - filtered_df['Enrollment %'], 'type': 'bar', 'name': 'Capacity', 'text': fmt_cap_txt}
-        ],
-        'layout': {
-            'title': f'Enrollment and Capacity',
-            'barmode': 'stack'
-        }
-    }
-
-    course_list_Items = [dbc.ListGroupItem(course) for course in unique_courses]
-
-    #course_count_figure = {
-    #    'data': [
-    #        {'x': filtered_df['Department'] + '-' + filtered_df['Courses'], 'y': filtered_df['Course_count'], 'type':'bar', 'name':'Course count', 'text': fmt_ccount_txt}
-    #    ],
-    #    'layout': {
-    #        'title': f'Course count'
-    #    }
-    #}
-
-    mean_courses_chart = px.bar(mean_courseDF, x='Department', y='Course_count', color='Instructor_Title',
-                                title=f'Mean number of courses by instructor title and department ({selected_file.capitalize()})',
-                                labels={'Course_count': 'Mean Courses'}, height=400)
-    
-    instructor_course_assignment = {
-        'data': [
-            {'x': instructorTitle_courses['Instructor_Title'], 'y': instructorTitle_courses['Course_count'], 'type': 'bar', 'name': 'Titles'}
-        ],
-        'layout': {
-            'title': f'Sum of Instructor titles teaching all possible courses'
-        }
-    }
-
-    instructor_department_courseSum = px.bar(instructorTitle_Deptcourses, x='Instructor_Title', y='Course_count', color='Department',
-                                             title=f'Sum of instructor titles by department', barmode='stack', labels={'Course_count': 'Sum of Courses'}) 
-
-    department_summary = {
-        'data': [
-            {'x': department['Department'], 'y': department['Sum_Enrollment'], 'type': 'bar', 'name': 'Enrollment'},
-            {'x': department['Department'], 'y': department['Sum_Capacity'], 'type': 'bar', 'name': 'Capacity'}
-        ],
-        'layout': {
-            'title': f'Department Enrollment'
-        }
-    }
-
-    enrollment_day_summary = px.bar(day_avail, x='Days', y='Enrl*', color='Department',
-                                    title=f'Enrollment by day and department', barmode='stack')
-    
-    outlier_table = outlier_df.to_dict('records')
-
-    return enrollment_capacity_figure, course_list_Items, mean_courses_chart, instructor_course_assignment, instructor_department_courseSum, department_summary, enrollment_day_summary, outlier_table
-
-if __name__ == '__main__':
-    app.run(debug=True)
