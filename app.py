@@ -12,8 +12,7 @@ if not st.user.is_logged_in:
     login_screen()
 else:
     st.header(f"Welcome, {st.user.name}")
-
-st.button("Log out", on_click=st.logout)
+    st.button("Log out", on_click=st.logout)
 
 F24 = pd.read_excel('data/source/Fall-2024-PIN-PWL.xlsx', header=0)
 S25 = pd.read_excel('data/source/Spring-2025-PIN-PWL.xlsx', header=0)
