@@ -7,3 +7,4 @@ data/archived/Fall 2023.csv
 data/archived/SP23 Standardized.xlsx
 data/archived/SP23.csv
 data/archived/Spring 2023.csv
+.streamlit/secrets.toml
